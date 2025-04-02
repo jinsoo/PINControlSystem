@@ -294,19 +294,19 @@ module PINControlSystem
     reverse(rx_buf)[1:2:end], rx_buf
   end
   get_bids(cs::PINController) = unique(cs.df[:, :bid])
-  get_cconfig(cs::PINController, bid::Int) = cs.df[(cs.df.bid .==bid) .& (cs.df.cpin_enable .== true), :cconfig][1,1]
-  get_cnumbers(cs::PINController, bid::Int) = sort!(unique(cs.df[(cs.df.bid .== bid) .& (cs.df.cpin_enable .== true), :cid]))
-  get_board(cs::PINController, bid::Int) = cs.df[(cs.df.bid .== bid) .& (cs.df.cpin_enable .== true), :] 
+  get_cconfig(cs::PINController, bid::Int) = cs.df[coalesce.(cs.df.bid .== bid, false).&coalesce.(cs.df.cpin_enable .== true, false), :cconfig][1, 1]
+  get_cnumbers(cs::PINController, bid::Int) = sort!(unique(cs.df[coalesce.(cs.df.bid .== bid, false).&coalesce.(cs.df.cpin_enable .== true, false), :cid]))
+  get_board(cs::PINController, bid::Int) = cs.df[coalesce.(cs.df.bid .== bid, false).&coalesce.(cs.df.cpin_enable .== true, false), :]
 
   @inline function change_pid_states!(cs::PINController, pids::Union{Vector,UnitRange}, states::Vector{Bool}) 
     @assert length(pids) == length(states) "Length of pids and states must be the same"
     for (pid, state) in zip(pids, states)
-      cs.df[cs.df[:,:pid] .== pid, :cpin_state] .= state
+      cs.df[coalesce.(cs.df[:,:pid] .== pid, false), :cpin_state] .= state
     end
   end
-  @inline getbycid(cs::PINController, cid::Int) = cs.df[(cs.df.cid.==cid) .& (cs.df.cpin_enable .== true), :]
-  @inline getbybid(cs::PINController, bid::Int) = cs.df[(cs.df.bid.==bid) .& (cs.df.cpin_enable .== true), :]
-  @inline getbybport(cs::PINController, bport::Int) = cs.df[(cs.df.bport.==bport) .& (cs.df.cpin_enable .== true), :]
+  @inline getbycid(cs::PINController, cid::Int) = cs.df[coalesce.(cs.df.cid .== cid, false).&coalesce.(cs.df.cpin_enable .== true, false), :]
+  @inline getbybid(cs::PINController, bid::Int) = cs.df[coalesce.(cs.df.bid .== bid, false).&coalesce.(cs.df.cpin_enable .== true, false), :]
+  @inline getbybport(cs::PINController, bport::Int) = cs.df[coalesce.(cs.df.bport .== bport, false).&coalesce.(cs.df.cpin_enable .== true, false), :]
   @inline function vector_to_uint8(vc::Vector)
     n = length(vc)
     #@assert 1 <= n <= 8 "Vector must have 1 to 8 elements"
@@ -324,22 +324,22 @@ module PINControlSystem
   function put_pin_state_bybid!(cs::PINController, bid::Int, bports::Vector{Int}, state::Vector{Bool})
     @assert length(bid) == length(state) "bid"
     for (i, b) in enumerate(bports)
-      cs.df[(cs.df[:, :bid].== bid) .&& (cs.df[:, :bport] .== b), :cpin_state] .= state[i]
+    cs.df[coalesce.(cs.df[:, :bid] .== bid, false).&&coalesce.(cs.df[:, :bport] .== b, false), :cpin_state] .= state[i]
     end
   end
   @inline get_active_pins(cs::PINController) = cs.df[(cs.df.cpin_enable .== true) .&& (cs.df.PINn .!== missing), :]
   function put_pin_all_state!(cs::PINController, state::Bool) 
     cs.df[:, :cpin_state] .= state
   end
-  function put_pin_state!(cs::PINController, pid::Vector{Int}, state::Vector{Bool})
-    @assert length(pid) == length(state) "pid"
-    for (i, p) in enumerate(pid)
-      cs.df[cs.df[:,:pid] .== p, :cpin_state] .= state[i]
+  function put_pin_state!(cs::PINController, PINs::Vector{Int}, state::Vector{Bool})
+    @assert length(PINs) == length(state) "pid"
+    for (i, p) in enumerate(PINs)
+      cs.df[coalesce.(cs.df[:, :PINs] .== p, false), :cpin_state] .= state[i]
     end
   end
-  function get_pin_state(cs::PINController, pid::Vector{Int})
-    @assert !isempty(pid) "pid"
-    return cs.df[cs.df[:,:pid] .== pid, :cpin_state]
+  function get_pin_state(cs::PINController, PINs::Vector{Int})
+    @assert !isempty(PINs) "PINs"
+    return cs.df[coalesce.(cs.df[:, :PINs] .== pid, false), :cpin_state]
   end
   function send_pin_states(cs::PINController, check::Bool=false)
     #switches = BitVector(switches)
@@ -353,7 +353,7 @@ module PINControlSystem
         vals = UInt8[]
         for cid = reverse(unique(df[:,:cid])) # 11:1
           push!(cmds, c)
-          push!(vals, vector_to_uint8([df[(df.cport.==k).&&(df.cid.==cid), :cpin_state][1] for k = s[i]:e[i]]))
+          push!(vals, vector_to_uint8([df[coalesce.(df.cport .== k, false).&& coalesce.(df.cid .== cid, false), :cpin_state][1] for k = s[i]:e[i]]))
         end
         send_spi(cs, bid, cmds, vals)
       end
@@ -368,7 +368,7 @@ module PINControlSystem
           vals = UInt8[]
           for cid = reverse(unique(df[:, :cid])) # 11:1
             push!(cmds, c)
-            push!(vals, vector_to_uint8([df[(df.cport.==k).&&(df.cid.==cid), :cpin_state][1] for k = s[i]:e[i]]))
+            push!(vals, vector_to_uint8([df[coalesce.(df.cport .== k, false).&&coalesce.(df.cid .== cid, false), :cpin_state][1] for k = s[i]:e[i]]))
           end
           r,_ = read_spi(cs, bid, cmds)
           println("$(bid) : $(i), : $(vals)")
@@ -381,7 +381,7 @@ module PINControlSystem
 
   # intensity 0: max, 15: min
   @inline function put_intensity_bybid!(cs::PINController, bid::Int, bport::Int, intensity::Int) 
-    cs.df[(cs.df.bid.==bid).&(cs.df.bport.==bport), :cpin_intensity] .= intensity
+    cs.df[coalesce.(cs.df.bid .== bid, false).&coalesce.(cs.df.bport .== bport, false), :cpin_intensity] .= intensity
   end
   # intensity 0: max, 15: min
   @inline function put_intensity!(cs::PINController, pinn::Vector{Int}, intensity::Vector{Int})
@@ -404,7 +404,7 @@ module PINControlSystem
         vals = UInt8[]
         for cid in reverse(unique(df[:, :cid])) # 11:1
           push!(cmds, r)
-          t = [df[(df.cport.==k).&&(df.cid.==cid), :cpin_intensity][1] for k = c:(c+1)] 
+        t = [df[coalesce.(df.cport .== k, false).&&coalesce.(df.cid .== cid, false), :cpin_intensity][1] for k = c:(c+1)]
           push!(vals, t[2] << 4 | t[1])
         end
         send_spi(cs, bid, cmds, vals)
