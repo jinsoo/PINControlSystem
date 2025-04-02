@@ -119,8 +119,8 @@ module PINControlSystem
     gpio_handle::Int32
     riset::Unitful.ElectricalResistance
     df::DataFrame
-    
-    function PINController(gpioH::Integer, riset::Unitful.ElectricalResistance=93.1u"kΩ")
+  end
+  function PINController(gpioH::Integer, riset::Unitful.ElectricalResistance=93.1u"kΩ")
       # gpio_handle = lg_gpiochip_open(gpio_chip)
       if gpioH < 0
         error("Failed to open GPIO chip: $(lg_error_text(gpio_handle))")
@@ -129,8 +129,7 @@ module PINControlSystem
         cid=Int[],cconfig=UInt8[], cport=Int[],cpin_enable=Bool[],
         cpin_mode=UInt8[],cpin_state=Bool[],cpin_intensity=UInt8[],cpin_current=Vector{typeof(1.0u"A")}())
       new(gpioH, riset, df)
-    end  
-  end
+  end  
   function put_board!(CS::PINController, boardid::Int, spi_handle::Integer, cs_pin::Integer)
     if isempty(CS.df[:, :bid])
       bbid = 1
