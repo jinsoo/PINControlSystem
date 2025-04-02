@@ -7,7 +7,7 @@ module PINControlSystem
 
   # Exported functions
   export lg_gpiochip_open, lg_spi_open, lg_gpio_write, lg_spi_write, lg_spi_read, lg_error_text, lg_gpiochip_close, lg_spi_close, lg_gpio_free, lg_gpio_claim_output, lg_gpio_claim_input, lg_gpio_claim_input_pullup, lg_spi_xfer, lg_spi_read, lg_spi_write
-  export PINControllerSystem, put_board!, set_gpio_output, lg_close, set_config, matching_antenna_connectors!,
+  export PINController, PINControllerSystem, put_board!, set_gpio_output, lg_close, set_config, matching_antenna_connectors!,
           get_board_by_antconnector, get_board_by_PINn, select_board, deselect_board, get_spis, send_spi, read_spi, 
           get_bids, get_cconfig, get_cnumbers, get_board, change_pid_states!, lg_close, getbycid, getbybid, getbybport, 
           put_pin_state_bybid, get_active_pins, put_pin_all_state!, send_pin_states, put_intensity_bybid!, put_intensity!, 
