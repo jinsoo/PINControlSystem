@@ -7,7 +7,7 @@ module PINControlSystem
 
   # Exported functions
   export lg_gpiochip_open, lg_spi_open, lg_gpio_write, lg_spi_write, lg_spi_read, lg_error_text, lg_gpiochip_close, lg_spi_close, lg_gpio_free, lg_gpio_claim_output, lg_gpio_claim_input, lg_gpio_claim_input_pullup, lg_spi_xfer, lg_spi_read, lg_spi_write
-  export PINController, put_board!, set_gpio_output, lg_close, set_config, matching_antenna_connectors!, 
+  export PINControllerSystem, put_board!, set_gpio_output, lg_close, set_config, matching_antenna_connectors!,
           get_board_by_antconnector, get_board_by_PINn, select_board, deselect_board, get_spis, send_spi, read_spi, 
           get_bids, get_cconfig, get_cnumbers, get_board, change_pid_states!, lg_close, getbycid, getbybid, getbybport, 
           put_pin_state_bybid, get_active_pins, put_pin_all_state!, send_pin_states, put_intensity_bybid!, put_intensity!, 
@@ -119,8 +119,8 @@ module PINControlSystem
     gpio_handle::Int32
     riset::Unitful.ElectricalResistance
     df::DataFrame
-  end
-  function PINController(gpioH::Integer, riset::Unitful.ElectricalResistance=93.1u"kΩ")
+    
+    function PINController(gpioH::Integer, riset::Unitful.ElectricalResistance=93.1u"kΩ")
       # gpio_handle = lg_gpiochip_open(gpio_chip)
       if gpioH < 0
         error("Failed to open GPIO chip: $(lg_error_text(gpio_handle))")
@@ -129,7 +129,11 @@ module PINControlSystem
         cid=Int[],cconfig=UInt8[], cport=Int[],cpin_enable=Bool[],
         cpin_mode=UInt8[],cpin_state=Bool[],cpin_intensity=UInt8[],cpin_current=Vector{typeof(1.0u"A")}())
       new(gpioH, riset, df)
-  end  
+    end  
+  end
+  function PINControllerSystem(gpioH::Integer, riset::Unitful.ElectricalResistance=93.1u"kΩ")
+    return PINController(gpioH, riset)
+  end
   function put_board!(CS::PINController, boardid::Int, spi_handle::Integer, cs_pin::Integer)
     if isempty(CS.df[:, :bid])
       bbid = 1
