@@ -7,7 +7,7 @@ module PINControlSystem
 
   # Exported functions
   export lg_gpiochip_open, lg_spi_open, lg_gpio_write, lg_spi_write, lg_spi_read, lg_error_text, lg_gpiochip_close, lg_spi_close, lg_gpio_free, lg_gpio_claim_output, lg_gpio_claim_input, lg_gpio_claim_input_pullup, lg_spi_xfer, lg_spi_read, lg_spi_write
-  export PINController, PINControllerSystem, put_board!, set_gpio_output, lg_close, set_config, matching_antenna_connectors!,
+  export PINController, PINControllerSystem, put_board!, lg_set_gpio_output, lg_close, set_config, matching_antenna_connectors!,
           get_board_by_antconnector, get_board_by_PINn, select_board, deselect_board, get_spis, send_spi, read_spi, 
           get_bids, get_cconfig, get_cnumbers, get_board, change_pid_states!, lg_close, getbycid, getbybid, getbybport, 
           put_pin_state_bybid, get_active_pins, put_pin_all_state!, send_pin_states, put_intensity_bybid!, put_intensity!, 
@@ -427,11 +427,11 @@ module PINControlSystem
       error("Failed to open SPI0 : $(lg_error_text(gpio_handle))")
     end
     spi0_cs0_pin = 8 # GPIO pin 8 is used for SPI0_CS0
-    set_gpio_output(gpio_handle, spi0_cs0_pin)
+    lg_set_gpio_output(gpio_handle, spi0_cs0_pin)
     spi0_cs1_pin = 7 # GPIO pin 7 is used for SPI0_CS1
-    set_gpio_output(gpio_handle, spi0_cs1_pin)
+    lg_set_gpio_output(gpio_handle, spi0_cs1_pin)
     spi0_cs2_pin = 25 # GPIO pin 25 is used for SPI0_CS2
-    set_gpio_output(gpio_handle, spi0_cs2_pin)
+    lg_set_gpio_output(gpio_handle, spi0_cs2_pin)
 
     # Open SPI1 handles 
     spi1_handle = lg_spi_open(1, 0, 15_000_000, 0)
@@ -439,11 +439,11 @@ module PINControlSystem
       error("Failed to open SPI1 : $(lg_error_text(gpio_handle))")
     end
     spi1_cs0_pin = 16 # GPIO pin 16 is used for SPI1_CS0
-    set_gpio_output(gpio_handle, spi1_cs0_pin)
+    lg_set_gpio_output(gpio_handle, spi1_cs0_pin)
     spi1_cs1_pin = 6 # GPIO pin 6 is used for SPI1_CS1
-    set_gpio_output(gpio_handle, spi1_cs1_pin)
+    lg_set_gpio_output(gpio_handle, spi1_cs1_pin)
     spi1_cs2_pin = 5 # GPIO pin 5 is used for SPI1_CS2
-    set_gpio_output(gpio_handle, spi1_cs2_pin)
+    lg_set_gpio_output(gpio_handle, spi1_cs2_pin)
 
     
     cs = PINController(gpio_handle)
