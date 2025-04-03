@@ -68,7 +68,7 @@ module PINControlSystem
 
   const CHIPs = 11
 
-  function set_gpio_output(gpio_handle, pin)
+  function lg_set_gpio_output(gpio_handle, pin)
     result = lg_gpio_claim_output(gpio_handle, 0, pin, 1)
     if result < 0
       error("Failed to claim GPIO pin $pin : $(lg_error_text(result))")
