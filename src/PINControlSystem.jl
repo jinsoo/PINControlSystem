@@ -11,7 +11,8 @@ module PINControlSystem
           get_board_by_antconnector, get_board_by_PINn, select_board, deselect_board, get_spis, send_spi, read_spi, 
           get_bids, get_cconfig, get_cnumbers, get_board, change_pid_states!, lg_close, getbycid, getbybid, getbybport, 
           put_pin_state_bybid, get_active_pins, put_pin_all_state!, send_pin_states, put_intensity_bybid!, put_intensity!, 
-  get_pin_state, send_intensity_states, example, Angle, radᵃ, °ᵃ
+          get_pin_state, send_intensity_states, example, Angle, radᵃ, °ᵃ,
+          set_display_test_mode, set_current_mode, set_global_current, send_spi_selective_chips
 
   # Register Address Map for MAX6957
   const REG_NO_OP = 0x00
@@ -68,12 +69,28 @@ module PINControlSystem
 
   const CHIPs = 11
 
+  """
+      lg_set_gpio_output(gpio_handle, pin)
+
+  Configures a specific GPIO pin as an output.
+
+  # Arguments
+  - `gpio_handle`: Handle to the GPIO chip.
+  - `pin`: The GPIO pin number to configure.
+  """
   function lg_set_gpio_output(gpio_handle, pin)
     result = lg_gpio_claim_output(gpio_handle, 0, pin, 1)
     if result < 0
       error("Failed to claim GPIO pin $pin : $(lg_error_text(result))")
     end
   end
+
+  """
+      lg_close()
+
+  Closes all open GPIO and SPI handles and frees claimed pins.
+  This function relies on global variables `gpio_handle`, `spi0_handle`, etc., which is not ideal for library code but fits the current usage pattern.
+  """
   function lg_close()
     global gpio_handle, spi0_handle, spi1_handle, spi0_cs0_pin, spi0_cs1_pin, spi0_cs2_pin, spi1_cs0_pin, spi1_cs1_pin, spi1_cs2_pin
     a = lg_gpiochip_close(gpio_handle)
@@ -114,7 +131,16 @@ module PINControlSystem
     end
   end
 
-  # Define PINController struct
+  """
+      PINController
+
+  Mutable struct representing the PIN diode control system.
+
+  # Fields
+  - `gpio_handle::Int32`: Handle to the GPIO chip.
+  - `riset::Unitful.ElectricalResistance`: Resistor value for current setting (default 93.1kΩ).
+  - `df::DataFrame`: Internal DataFrame storing the state and configuration of all pins.
+  """
   mutable struct PINController
     gpio_handle::Int32
     riset::Unitful.ElectricalResistance
@@ -131,9 +157,28 @@ module PINControlSystem
       new(gpioH, riset, df)
     end  
   end
+
+  """
+      PINControllerSystem(gpioH::Integer, riset::Unitful.ElectricalResistance=93.1u"kΩ")
+
+  Constructor wrapper for `PINController`.
+  """
   function PINControllerSystem(gpioH::Integer, riset::Unitful.ElectricalResistance=93.1u"kΩ")
     return PINController(gpioH, riset)
   end
+
+  """
+      put_board!(CS::PINController, boardid::Int, spi_handle::Integer, cs_pin::Integer)
+
+  Adds a new board to the PIN controller system.
+  Each board consists of 11 daisy-chained MAX6957 chips.
+
+  # Arguments
+  - `CS`: The PIN controller instance.
+  - `boardid`: Unique identifier for the board.
+  - `spi_handle`: SPI handle for communication.
+  - `cs_pin`: GPIO pin used for Chip Select.
+  """
   function put_board!(CS::PINController, boardid::Int, spi_handle::Integer, cs_pin::Integer)
     if isempty(CS.df[:, :bid])
       bbid = 1
@@ -182,6 +227,13 @@ module PINControlSystem
       CS.df = vcat(CS.df, boardmap)
     end
   end
+
+  """
+      set_config(cs::PINController)
+
+  Applies the configuration to all boards in the system.
+  Sets port configurations, initializes pin states to false, and sends initial intensity settings.
+  """
   function set_config(cs::PINController)
     for i in get_bids(cs)
       cconfig = get_cconfig(cs, i)
@@ -200,6 +252,12 @@ module PINControlSystem
     send_intensity_states(cs)     # send all intensity states
   end
 
+  """
+      matching_antenna_connectors!(cs::PINController, filename::String="data/link_SW_2_board.csv")
+
+  Reads a CSV file to map PIN diodes to antenna connectors and physical coordinates.
+  Updates the internal DataFrame with this mapping.
+  """
   function matching_antenna_connectors!(cs::PINController, filename::String="data/link_SW_2_board.csv")
     @assert isfile(filename) "File not found"
     ddf = CSV.read(filename, DataFrame)
@@ -236,13 +294,39 @@ module PINControlSystem
   end
 
 
+  """
+      get_board_by_antconnector(cs::PINController, PINconnector::String)
+
+  Retrieves board information associated with a specific antenna connector.
+  """
   @inline get_board_by_antconnector(cs::PINController, PINconnector::String) = cs.df[coalesce.(cs.df.PINconnector .== PINconnector, false), :]
+
+  """
+      get_board_by_PINn(cs::PINController, PINn::Int)
+
+  Retrieves board information associated with a specific PIN number.
+  """
   @inline get_board_by_PINn(cs::PINController, PINn::Int) = cs.df[coalesce.(cs.df.PINn .== PINn, false), :]
-  # Function to select the board (activate CS)
+  
+  """
+      select_board(cs::PINController, cs_pin::Integer)
+
+  Activates the Chip Select (CS) line (sets it LOW) for a board.
+  """
   select_board(cs::PINController, cs_pin::Integer) = lg_gpio_write(cs.gpio_handle, cs_pin, 0)  # Set CS low
-  # Function to deselect the board (deactivate CS)
+  
+  """
+      deselect_board(cs::PINController, cs_pin::Integer)
+
+  Deactivates the Chip Select (CS) line (sets it HIGH) for a board.
+  """
   deselect_board(cs::PINController, cs_pin::Integer) = lg_gpio_write(cs.gpio_handle, cs_pin, 1)  # Set CS high
-  # Function to get the SPI handle and CS pin for a board
+  
+  """
+      get_spis(cs::PINController, bid::Int)
+
+  Retrieves the SPI handle and CS pin associated with a Board ID.
+  """
   function get_spis(cs::PINController, bid::Int) 
     df = cs.df[cs.df.bid .== bid, :]
     if isempty(df)
@@ -252,7 +336,18 @@ module PINControlSystem
     cs_pin = df[1, :cs_pin]
     return spi_handle, cs_pin
   end
-  # Function to send SPI command to a daisy-chained board
+  
+  """
+      send_spi(cs::PINController, bid::Int, com::Vector{UInt8}, val::Vector{UInt8})
+
+  Sends SPI commands and values to a board.
+  
+  # Arguments
+  - `cs`: PINController instance.
+  - `bid`: Board ID.
+  - `com`: Vector of commands (one per chip in the chain).
+  - `val`: Vector of values (one per chip in the chain).
+  """
   function send_spi(cs::PINController, bid::Int, com::Vector{UInt8}, val::Vector{UInt8})
     spi_handle, cs_pin = get_spis(cs, bid)
     tx_buf = Vector{UInt8}()
@@ -273,7 +368,12 @@ module PINControlSystem
     @assert rx_buf == tx_buf "rx_buf $(rx_buf) != tx_buf $(tx_buf)"
     reverse(rx_buf)[1:2:end], rx_buf
   end
-  # Function to read from SPI
+  
+  """
+      read_spi(cs::PINController, bid::Int, com::UInt8)
+
+  Reads data from a board via SPI.
+  """
   function read_spi(cs::PINController, bid::Int, com::UInt8)
     spi_handle, cs_pin = get_spis(cs, bid)
     tx_buf = Vector{UInt8}()
@@ -296,20 +396,153 @@ module PINControlSystem
     end
     reverse(rx_buf)[1:2:end], rx_buf
   end
+
+  """
+      get_spihandle_cspin(cs, bids::Vector{Int})
+
+  Helper function to get SPI handles and CS pins for multiple boards.
+  """
+  function get_spihandle_cspin(cs, bids::Vector{Int})
+    spi_handles = Vector{Int32}(undef, length(bids))
+    cs_pins = Vector{Int32}(undef, length(bids))
+    for (i, bid) in enumerate(bids)
+      spi_handles[i], cs_pins[i] = get_spis(cs, bid)
+    end
+    spi_handles, cs_pins
+  end
+
+  """
+      all_send_spi(cs::PINController, com::UInt8, val::UInt8)
+
+  Sends the same command and value to all boards in the system.
+  """
+  function all_send_spi(cs::PINController, com::UInt8, val::UInt8)
+    bids = get_bids(cs)
+    spi_handles, cs_pins = get_spihandle_cspin(cs, bids)
+    bchipn = [length(get_cnumbers(cs, bid)) for bid in bids]
+    tx_buf = Matrix{UInt8}(undef, length(bids), bchipn[1] * 2)
+    for i in eachindex(bids)
+      for j in range(1, bchipn[i] * 2, step=2)
+        tx_buf[i, j] = com
+        tx_buf[i, j+1] = val
+      end
+    end
+    rx_buf = similar(tx_buf)
+
+    for i in eachindex(bids)
+      select_board(cs, cs_pins[i])
+      #result = lg_spi_xfer(board.spi_handle, pointer(tx_buf), pointer(rx_buf), length(tx_buf))
+      result = lg_spi_write(spi_handles[i], tx_buf[i, :], length(tx_buf[i, :]))
+      deselect_board(cs, cs_pins[i])
+      select_board(cs, cs_pins[i])
+      #result = lg_spi_xfer(board.spi_handle, pointer(tx_buf), pointer(rx_buf), length(tx_buf))
+      result = lg_spi_read(spi_handles[i], rx_buf[i, :], length(tx_buf[i, :]))
+      deselect_board(cs, cs_pins[i])
+      if result < 0
+        @error "SPI read failed: $(i) board : $(lg_error_text(result))"
+      end
+      # println("rx_buf : $(rx_buf)")
+      # println("tx_buf : $(tx_buf)")
+      @assert rx_buf[i, :] == tx_buf[i, :] "send data Fail : $(i) board : rx_buf $(rx_buf[i,:]) != tx_buf $(tx_buf[i,:])\n"
+      #reverse(rx_buf)[1:2:end], rx_buf
+    end
+  end
+  
+  """
+      all_read_spi(cs::PINController, bid::Int, com::UInt8)
+
+  Reads from SPI for a specific board.
+  (Note: Function name implies 'all' but implementation takes a single `bid`. This might be a misnomer or intended for a different pattern).
+  """
+  function all_read_spi(cs::PINController, bid::Int, com::UInt8)
+    spi_handle, cs_pin = get_spis(cs, bid)
+    tx_buf = Vector{UInt8}()
+    for i in get_cnumbers(cs, bid)
+      push!(tx_buf, com | 0x80)  # Set the read bit (MSB to 1)
+      push!(tx_buf, 0x00)  # Dummy byte for reading
+    end
+    # Send the command and read the response
+    rx_buf = zeros(UInt8, length(tx_buf))
+    select_board(cs, cs_pin)
+    #result = lg_spi_xfer(board.spi_handle, pointer(tx_buf), pointer(rx_buf), length(tx_buf))
+    result = lg_spi_write(spi_handle, tx_buf, length(tx_buf))
+    deselect_board(cs, cs_pin)
+    select_board(cs, cs_pin)
+    #result = lg_spi_xfer(board.spi_handle, pointer(tx_buf), pointer(rx_buf), length(tx_buf))
+    result = lg_spi_read(spi_handle, rx_buf, length(tx_buf))
+    deselect_board(cs, cs_pin)
+    if result < 0
+      error("SPI read failed: $(lg_error_text(result))")
+    end
+    reverse(rx_buf)[1:2:end], rx_buf
+  end
+
+  """
+      get_bids(cs::PINController)
+
+  Returns a list of unique Board IDs in the system.
+  """
   get_bids(cs::PINController) = unique(cs.df[:, :bid])
+
+  """
+      get_cconfig(cs::PINController, bid::Int)
+
+  Retrieves the configuration byte for a specific board.
+  """
   get_cconfig(cs::PINController, bid::Int) = cs.df[coalesce.(cs.df.bid .== bid, false).&coalesce.(cs.df.cpin_enable .== true, false), :cconfig][1, 1]
+
+  """
+      get_cnumbers(cs::PINController, bid::Int)
+
+  Retrieves the sorted list of unique chip IDs for a specific board.
+  """
   get_cnumbers(cs::PINController, bid::Int) = sort!(unique(cs.df[coalesce.(cs.df.bid .== bid, false).&coalesce.(cs.df.cpin_enable .== true, false), :cid]))
+
+  """
+      get_board(cs::PINController, bid::Int)
+
+  Retrieves the DataFrame rows corresponding to a specific board.
+  """
   get_board(cs::PINController, bid::Int) = cs.df[coalesce.(cs.df.bid .== bid, false).&coalesce.(cs.df.cpin_enable .== true, false), :]
 
+  """
+      change_pid_states!(cs::PINController, pids::Union{Vector,UnitRange}, states::Vector{Bool})
+
+  Updates the state of specific System PIDs in the internal DataFrame.
+  """
   @inline function change_pid_states!(cs::PINController, pids::Union{Vector,UnitRange}, states::Vector{Bool}) 
     @assert length(pids) == length(states) "Length of pids and states must be the same"
     for (pid, state) in zip(pids, states)
       cs.df[coalesce.(cs.df[:,:pid] .== pid, false), :cpin_state] .= state
     end
   end
+
+  """
+      getbycid(cs::PINController, cid::Int)
+
+  Retrieves DataFrame rows for a specific Chip ID.
+  """
   @inline getbycid(cs::PINController, cid::Int) = cs.df[coalesce.(cs.df.cid .== cid, false).&coalesce.(cs.df.cpin_enable .== true, false), :]
+
+  """
+      getbybid(cs::PINController, bid::Int)
+
+  Retrieves DataFrame rows for a specific Board ID.
+  """
   @inline getbybid(cs::PINController, bid::Int) = cs.df[coalesce.(cs.df.bid .== bid, false).&coalesce.(cs.df.cpin_enable .== true, false), :]
+
+  """
+      getbybport(cs::PINController, bport::Int)
+
+  Retrieves DataFrame rows for a specific Board Port.
+  """
   @inline getbybport(cs::PINController, bport::Int) = cs.df[coalesce.(cs.df.bport .== bport, false).&coalesce.(cs.df.cpin_enable .== true, false), :]
+
+  """
+      vector_to_uint8(vc::Vector)
+
+  Converts a boolean vector (up to 8 elements) into a UInt8 byte.
+  """
   @inline function vector_to_uint8(vc::Vector)
     n = length(vc)
     #@assert 1 <= n <= 8 "Vector must have 1 to 8 elements"
@@ -324,26 +557,63 @@ module PINControlSystem
     end
     return result
   end
+
+  """
+      put_pin_state_bybid!(cs::PINController, bid::Int, bports::Vector{Int}, state::Vector{Bool})
+
+  Updates the state of pins specified by Board ID and Board Ports.
+  """
   function put_pin_state_bybid!(cs::PINController, bid::Int, bports::Vector{Int}, state::Vector{Bool})
     @assert length(bid) == length(state) "bid"
     for (i, b) in enumerate(bports)
     cs.df[coalesce.(cs.df[:, :bid] .== bid, false).&&coalesce.(cs.df[:, :bport] .== b, false), :cpin_state] .= state[i]
     end
   end
+
+  """
+      get_active_pins(cs::PINController)
+
+  Returns a DataFrame of all pins that are enabled and have an assigned PIN number.
+  """
   @inline get_active_pins(cs::PINController) = cs.df[(cs.df.cpin_enable .== true) .&& (cs.df.PINn .!== missing), :]
+
+  """
+      put_pin_all_state!(cs::PINController, state::Bool)
+
+  Sets the state of ALL pins in the system to the specified value.
+  """
   function put_pin_all_state!(cs::PINController, state::Bool) 
     cs.df[:, :cpin_state] .= state
   end
+
+  """
+      put_pin_state!(cs::PINController, PINs::Vector{Int}, state::Vector{Bool})
+
+  Updates the state of specific pins identified by their PIN numbers.
+  """
   function put_pin_state!(cs::PINController, PINs::Vector{Int}, state::Vector{Bool})
     @assert length(PINs) == length(state) "pid"
     for (i, p) in enumerate(PINs)
       cs.df[coalesce.(cs.df[:, :PINs] .== p, false), :cpin_state] .= state[i]
     end
   end
+
+  """
+      get_pin_state(cs::PINController, PINs::Vector{Int})
+
+  Retrieves the current state of specific pins.
+  """
   function get_pin_state(cs::PINController, PINs::Vector{Int})
     @assert !isempty(PINs) "PINs"
     return cs.df[coalesce.(cs.df[:, :PINs] .== pid, false), :cpin_state]
   end
+
+  """
+      send_pin_states(cs::PINController, check::Bool=false)
+
+  Transmits the current pin states from the internal DataFrame to the hardware.
+  If `check` is true, it reads back the states to verify.
+  """
   function send_pin_states(cs::PINController, check::Bool=false)
     #switches = BitVector(switches)
     for bid in get_bids(cs)
@@ -382,11 +652,22 @@ module PINControlSystem
     nothing
   end
 
-  # intensity 0: max, 15: min
+  """
+      put_intensity_bybid!(cs::PINController, bid::Int, bport::Int, intensity::Int)
+
+  Sets the intensity for a specific board port.
+  Intensity is 0 (max) to 15 (min).
+  """
   @inline function put_intensity_bybid!(cs::PINController, bid::Int, bport::Int, intensity::Int) 
     cs.df[coalesce.(cs.df.bid .== bid, false).&coalesce.(cs.df.bport .== bport, false), :cpin_intensity] .= intensity
   end
-  # intensity 0: max, 15: min
+
+  """
+      put_intensity!(cs::PINController, pinn::Vector{Int}, intensity::Vector{Int})
+
+  Sets the intensity for specific PIN numbers.
+  Intensity is 0 (max) to 15 (min).
+  """
   @inline function put_intensity!(cs::PINController, pinn::Vector{Int}, intensity::Vector{Int})
     @assert all(x -> (x >= filter(!ismissing, sort(cs.df[:, :PINn]))[1]) && (x <= filter(!ismissing, sort(cs.df[:, :PINn], rev=true))[1]), pinn) "Intensity must be between 1 and 16"
     @assert all(x -> x >= 0 && x <= 15, intensity) "Intensity must be between 1 and 16"
@@ -397,6 +678,116 @@ module PINControlSystem
     end
     nothing
   end
+
+  """
+  set_display_test_mode(cs::PINController, enable::Bool)
+
+  Enables or disables the Display Test Mode for all chips in the system.
+  When enabled, all LEDs are turned on at maximum intensity (15/16 or 31/32 duty cycle).
+  This overrides all other controls.
+
+  # Arguments
+  - `cs::PINController`: The PIN controller system.
+  - `enable::Bool`: `true` to enable test mode, `false` for normal operation.
+  """
+  function set_display_test_mode(cs::PINController, enable::Bool)
+    val = enable ? 0x01 : 0x00
+    all_send_spi(cs, REG_DISPLAY_TEST, val)
+  end
+
+  """
+  set_current_mode(cs::PINController, mode::Symbol)
+
+  Sets the current control mode for all chips in the system.
+
+  # Arguments
+  - `cs::PINController`: The PIN controller system.
+  - `mode::Symbol`: `:global` for global current control, `:individual` for individual current control.
+  """
+  function set_current_mode(cs::PINController, mode::Symbol)
+    if mode == :global
+      # Clear bit D6 for Global Current
+      # We need to read the current config to preserve other bits, but since we don't track it perfectly,
+      # we will assume the standard config and just modify the relevant bit.
+      # Standard config in put_board! is CONFIG_NORMAL | CONFIG_INDIVIDUAL_CURRENT | CONFIG_DETECT_DISABLED
+      # We will reconstruct the base config.
+      base_config = CONFIG_NORMAL | CONFIG_DETECT_DISABLED
+      # For global, we do NOT add CONFIG_INDIVIDUAL_CURRENT (0x40)
+      new_config = base_config | CONFIG_GLOBAL_CURRENT
+    elseif mode == :individual
+      base_config = CONFIG_NORMAL | CONFIG_DETECT_DISABLED
+      new_config = base_config | CONFIG_INDIVIDUAL_CURRENT
+    else
+      error("Invalid mode. Use :global or :individual")
+    end
+
+    # Update local DataFrame to reflect the change (optional but good for consistency)
+    cs.df[!, :cconfig] .= new_config
+    
+    # Send to all chips
+    all_send_spi(cs, REG_CONFIG, new_config)
+  end
+
+  """
+  set_global_current(cs::PINController, current::Int)
+
+  Sets the global current level for all chips when in Global Current mode.
+
+  # Arguments
+  - `cs::PINController`: The PIN controller system.
+  - `current::Int`: Current level from 0 (min) to 15 (max).
+  """
+  function set_global_current(cs::PINController, current::Int)
+    @assert 0 <= current <= 15 "Current must be between 0 and 15"
+    # The register value is just the current level (0x00 to 0x0F)
+    all_send_spi(cs, REG_GLOBAL_CURRENT, UInt8(current))
+  end
+
+  """
+  send_spi_selective_chips(cs::PINController, bid::Int, target_cids::Vector{Int}, coms::Vector{UInt8}, vals::Vector{UInt8})
+
+  Sends commands to specific chips in the daisy chain of a single board, sending No-Op to others.
+
+  # Arguments
+  - `cs::PINController`: The PIN controller system.
+  - `bid::Int`: The Board ID containing the daisy-chained chips.
+  - `target_cids::Vector{Int}`: List of Chip IDs (1-11) to update.
+  - `coms::Vector{UInt8}`: Commands for the target chips.
+  - `vals::Vector{UInt8}`: Values for the target chips.
+  """
+  function send_spi_selective_chips(cs::PINController, bid::Int, target_cids::Vector{Int}, coms::Vector{UInt8}, vals::Vector{UInt8})
+    @assert length(target_cids) == length(coms) == length(vals) "Length of cids, coms, and vals must match"
+    
+    spi_handle, cs_pin = get_spis(cs, bid)
+    all_cids = get_cnumbers(cs, bid) # Should be 1 to 11
+    
+    tx_buf = Vector{UInt8}()
+    
+    # Create a dictionary for easy lookup of targets
+    target_map = Dict(zip(target_cids, zip(coms, vals)))
+    
+    for cid in all_cids
+      if haskey(target_map, cid)
+        c, v = target_map[cid]
+        push!(tx_buf, c)
+        push!(tx_buf, v)
+      else
+        # Send No-Op
+        push!(tx_buf, REG_NO_OP)
+        push!(tx_buf, 0x00) # Dummy value for No-Op
+      end
+    end
+    
+    select_board(cs, cs_pin)
+    lg_spi_write(spi_handle, tx_buf, length(tx_buf))
+    deselect_board(cs, cs_pin)
+  end
+
+  """
+      send_intensity_states(cs::PINController)
+
+  Transmits the current intensity settings from the internal DataFrame to the hardware.
+  """
   function send_intensity_states(cs::PINController)
     for bid in get_bids(cs)
       df = cs.df[(cs.df.bid.==bid), :]
@@ -415,6 +806,11 @@ module PINControlSystem
     end
   end
 
+  """
+      example()
+
+  Demonstration function showing how to initialize the system, add boards, and control pins.
+  """
   function example()
     # Open GPIO chip
     gpio_handle = Int64(lg_gpiochip_open(0))
@@ -492,5 +888,11 @@ module PINControlSystem
     precompile(Tuple{typeof(put_intensity_bybid!), PINController, Int, Int, Int})
     precompile(Tuple{typeof(put_intensity!), PINController, Vector{Int}, Vector{Int}})
     precompile(Tuple{typeof(send_intensity_states), PINController})
+  end
+
+  function test()
+    bids = [1, 2, 3, 4, 5, 6]
+    spi_handles = [1, 1, 1, 2, 2, 2]
+    cspins = [8, 7, 25, 16, 6, 5]
   end
 end

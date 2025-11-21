@@ -4,160 +4,124 @@ A Julia module for controlling and managing PIN diodes via GPIO and SPI interfac
 
 ## Features
 
-- Control of multiple daisy-chained MAX6957 chips via SPI
-- GPIO and SPI communication with Raspberry Pi hardware
-- Management of PIN diode states and current intensities
-- Support for multiple control boards
-- Mapping between PIN diodes and antenna connectors
-- Configurable current settings for each PIN
+- **Multi-Board Control**: Manage multiple daisy-chained MAX6957 chips via SPI.
+- **Hardware Interface**: Direct GPIO and SPI communication with Raspberry Pi hardware.
+- **PIN Diode Management**: Control state (ON/OFF) and current intensity (16 levels) for individual PIN diodes.
+- **Flexible Configuration**: 
+    - Global or Individual current control modes.
+    - Display Test Mode for system verification.
+    - Selective addressing for efficient updates in daisy chains.
+- **Mapping System**: Map physical PIN diodes to logical antenna connectors using CSV configuration.
 
 ## Dependencies
 
-- DataFrames: For data management and manipulation
-- Unitful: For working with physical units
-- DimensionfulAngles: For angle measurements
-- CSV: For reading configuration data
-- PI5_LG_IO: Custom package for GPIO/SPI communication on Raspberry Pi 5
+- `DataFrames`: For data management and manipulation
+- `Unitful`: For working with physical units
+- `DimensionfulAngles`: For angle measurements
+- `CSV`: For reading configuration data
+- `PI5_LG_IO`: Custom package for GPIO/SPI communication on Raspberry Pi 5
 
 ## Installation
 
-1. Ensure you have Julia installed on your Raspberry Pi 5
+1. Ensure you have Julia installed on your Raspberry Pi 5.
 2. Install the required dependencies:
 
 ```julia
 using Pkg
 Pkg.add(["DataFrames", "Unitful", "CSV"])
-Pkg.add(url="https://github.com/jinsoo/DimensionfulAngles.jl")  # Replace with actual repository
-Pkg.add(url="https://github.com/jinsoo/PI5_LG_IO.jl")  # Replace with actual repository
+# Add custom packages (replace URLs with actual repositories if needed)
+Pkg.add(url="https://github.com/jinsoo/DimensionfulAngles.jl")
+Pkg.add(url="https://github.com/jinsoo/PI5_LG_IO.jl")
 ```
 
-3. Clone this repository or add the module to your project
+3. Clone this repository or add the module to your project.
 
 ## Hardware Setup
 
 This module is designed to work with:
-
-- Raspberry Pi 5
-- Multiple control boards with MAX6957 chips
-- SPI connections (SPI0 and SPI1)
-- Custom GPIO pins for SPI chip select
-- PIN diode arrays
+- **Raspberry Pi 5**
+- Multiple control boards, each containing daisy-chained MAX6957 chips.
+- **SPI Interfaces**: SPI0 and SPI1.
+- **GPIO**: Custom pins used for Chip Select (CS) lines.
 
 ## Usage Example
 
 ```julia
 using PINControlSystem
 
-# Initialize GPIO
+# 1. Initialize Hardware Handles
 gpio_handle = Int64(lg_gpiochip_open(0))
-if gpio_handle < 0
-    error("Failed to open GPIO chip: $(lg_error_text(gpio_handle))")
-end
-
-# Initialize SPI0
 spi0_handle = lg_spi_open(0, 0, 15_000_000, 0)
-if spi0_handle < 0
-    error("Failed to open SPI0: $(lg_error_text(gpio_handle))")
-end
 
-# Set up chip select pins
-spi0_cs0_pin = 8  # GPIO pin 8 for SPI0_CS0
-set_gpio_output(gpio_handle, spi0_cs0_pin)
+# 2. Configure Chip Select Pins
+spi0_cs0_pin = 8
+lg_set_gpio_output(gpio_handle, spi0_cs0_pin)
 
-# Create PIN controller
+# 3. Initialize Controller
 cs = PINController(gpio_handle)
 
-# Add a board
+# 4. Add Boards to System
+# Board 1 on SPI0, CS pin 8
 put_board!(cs, 1, spi0_handle, spi0_cs0_pin)
 
-# Configure the system
-set_config(cs)
+# 5. Load Configuration & Map Connectors
+matching_antenna_connectors!(cs) # Loads from default CSV
+set_config(cs) # Applies initial configuration to hardware
 
-# Match antenna connectors with configuration file
-matching_antenna_connectors!(cs)
+# 6. Control PINs
+# Turn all PINs OFF
+put_pin_all_state!(cs, false)
+send_pin_states(cs)
 
-# Control PIN states
-put_pin_all_state!(cs, false)  # Set all pins to off
-send_pin_states(cs)  # Send states to hardware
+# Set specific PINs ON
+put_pin_state!(cs, [1, 2, 3], [true, true, true])
+send_pin_states(cs)
 
-# Set specific PIN intensities
-put_intensity!(cs, [1, 2, 3], [5, 10, 15])  # Set PINs 1, 2, 3 to different intensities
-send_intensity_states(cs)  # Send intensity settings to hardware
+# 7. Advanced Features
+# Enable Display Test Mode (All LEDs Max Brightness)
+set_display_test_mode(cs, true)
 
-# Clean up resources when done
-lg_spi_close(spi0_handle)
-lg_gpiochip_close(gpio_handle)
+# Switch to Global Current Control and set level
+set_current_mode(cs, :global)
+set_global_current(cs, 8) # Set to mid-range intensity
+
+# Selective Update (Advanced)
+# Update specific chips on Board 1 without affecting others
+send_spi_selective_chips(cs, 1, [1], [0x04], [0x01])
+
+# 8. Cleanup
+lg_close()
 ```
-
-For a complete example, see the `example()` function in the code.
 
 ## API Reference
 
 ### Core Types
+- `PINController`: Main system struct managing state and hardware handles.
 
-#### PINController
-Main structure that manages all PIN configurations and states.
+### System Management
+- `put_board!(cs, bid, spi, cs_pin)`: Add a board to the system.
+- `set_config(cs)`: Apply configuration to all connected boards.
+- `lg_close()`: Release all hardware resources.
 
-```julia
-PINController(gpioH::Integer, riset::Unitful.ElectricalResistance=93.1u"kΩ")
-```
+### PIN Control
+- `put_pin_all_state!(cs, state)`: Set state for ALL pins.
+- `put_pin_state!(cs, pids, states)`: Set state for specific pins.
+- `send_pin_states(cs)`: Commit pin states to hardware.
+- `put_intensity!(cs, pids, intensities)`: Set intensity (0-15) for specific pins.
+- `send_intensity_states(cs)`: Commit intensity settings to hardware.
 
-### GPIO/SPI Management Functions
+### Advanced Features
+- `set_display_test_mode(cs, enable)`: Toggle MAX6957 Display Test Mode.
+- `set_current_mode(cs, mode)`: Switch between `:global` and `:individual` current control.
+- `set_global_current(cs, level)`: Set global current level (0-15).
+- `send_spi_selective_chips(cs, bid, cids, coms, vals)`: Send commands to specific chips in a daisy chain, using No-Op for others.
 
-- `lg_gpiochip_open(gpio_chip)`: Open GPIO chip
-- `lg_spi_open(bus, device, speed, mode)`: Open SPI device
-- `set_gpio_output(gpio_handle, pin)`: Configure GPIO pin as output
-- `lg_close()`: Close all GPIO and SPI handles
+### Data Retrieval
+- `get_board_by_antconnector(cs, name)`: Find board info by connector name.
+- `get_active_pins(cs)`: Get list of currently active pins.
 
-### Board Management
-
-- `put_board!(cs, boardid, spi_handle, cs_pin)`: Add a board to the controller
-- `set_config(cs)`: Configure all boards in the system
-- `matching_antenna_connectors!(cs, filename)`: Map PIN diodes to antenna connectors from CSV
-
-### PIN Control Functions
-
-- `put_pin_all_state!(cs, state)`: Set all PIN states
-- `put_pin_state!(cs, pid, state)`: Set specific PIN states by PIN ID
-- `put_intensity!(cs, pinn, intensity)`: Set PIN intensities
-- `send_pin_states(cs)`: Send all PIN states to hardware
-- `send_intensity_states(cs)`: Send all intensity states to hardware
-
-### Utility Functions
-
-- `get_board_by_antconnector(cs, PINconnector)`: Get board by antenna connector
-- `get_board_by_PINn(cs, PINn)`: Get board by PIN number
-- `get_active_pins(cs)`: Get all active pins
-- `get_bids(cs)`: Get all board IDs
-- `get_board(cs, bid)`: Get board by ID
-
-## Configuration File Format
-
-The system uses a CSV file to map PIN diodes to antenna connectors. Expected columns include:
-
-- Board number
-- Port number
-- SW number
-- Antenna connector
-- width(mm)
-- length(mm)
-- x1(mm), y1(mm), theta1(deg)
-- x2(mm), y2(mm), theta2(deg)
-
-## Hardware Details
-
-### MAX6957 Configuration
-
-The system configures MAX6957 chips with the following settings:
-- Normal operation mode
-- Individual current control
-- Transition detection disabled
-- Port configuration: GPIO output mode
+## Configuration File
+The system expects a CSV file (default `data/link_SW_2_board.csv`) mapping logical antenna connectors to physical board/port addresses.
 
 ## License
-
 [Add license information here]
-
-## Contributors
-
-[Add contributor information here]
