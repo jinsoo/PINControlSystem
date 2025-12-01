@@ -858,37 +858,10 @@ module PINControlSystem
 
   end
 
-  function __init__()
-    precompile(Tuple{typeof(PINController), Int, Unitful.ElectricalResistance})
-    precompile(Tuple{typeof(put_board!), PINController, Int, Int, Int})
-    precompile(Tuple{typeof(set_config), PINController})
-    precompile(Tuple{typeof(matching_antenna_connectors!), PINController, String})
-    precompile(Tuple{typeof(get_board_by_antconnector), PINController, String})
-    precompile(Tuple{typeof(get_board_by_PINn), PINController, Int})
-    precompile(Tuple{typeof(select_board), PINController, Int})
-    precompile(Tuple{typeof(deselect_board), PINController, Int})
-    precompile(Tuple{typeof(get_spis), PINController, Int})
-    precompile(Tuple{typeof(send_spi), PINController, Int, Vector{UInt8}, Vector{UInt8}})
-    precompile(Tuple{typeof(read_spi), PINController, Int, UInt8})
-    precompile(Tuple{typeof(get_bids), PINController})
-    precompile(Tuple{typeof(get_cconfig), PINController, Int})
-    precompile(Tuple{typeof(get_cnumbers), PINController, Int})
-    precompile(Tuple{typeof(get_board), PINController, Int})
-    precompile(Tuple{typeof(change_pid_states!), PINController, Vector, Vector})
-    precompile(Tuple{typeof(getbycid), PINController, Int})
-    precompile(Tuple{typeof(getbybid), PINController, Int})
-    precompile(Tuple{typeof(getbybport), PINController, Int})
-    precompile(Tuple{typeof(vector_to_uint8), Vector})
-    precompile(Tuple{typeof(put_pin_state_bybid!), PINController, Int, Int, Bool})
-    precompile(Tuple{typeof(get_active_pins), PINController})
-    precompile(Tuple{typeof(put_pin_all_state!), PINController, Bool})
-    precompile(Tuple{typeof(put_pin_state!), PINController, Vector{Int}, Vector{Bool}})
-    precompile(Tuple{typeof(get_pin_state), PINController, Vector{Int}})
-    precompile(Tuple{typeof(send_pin_states), PINController})
-    precompile(Tuple{typeof(put_intensity_bybid!), PINController, Int, Int, Int})
-    precompile(Tuple{typeof(put_intensity!), PINController, Vector{Int}, Vector{Int}})
-    precompile(Tuple{typeof(send_intensity_states), PINController})
-  end
+  # It is generally better to let Julia's automatic precompilation do its job.
+  # Manual precompile directives can be brittle. If you need to guide
+  # precompilation, you can use `precompile` on a workload function.
+  # However, for now, removing the manual directives is the safest approach.
 
   function test()
     bids = [1, 2, 3, 4, 5, 6]
